@@ -5,7 +5,7 @@ permissions:
 
 on:
   schedule:
-    - cron: "0 4 * * *" # At 12PM UTC+8
+    - cron: "0 16 * * *" # 每天 UTC 16:00 (北京时间 00:00)
   workflow_dispatch:
 
 jobs:
@@ -15,11 +15,17 @@ jobs:
     if: ${{ github.event.repository.fork }}
 
     steps:
-      # Step 1: run a standard checkout action
       - name: Checkout target repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
 
-      # Step 2: run the sync action
+      - name: Setup git config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - name: Sync upstream changes
         id: sync
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
@@ -28,9 +34,34 @@ jobs:
           upstream_sync_branch: main
           target_sync_branch: main
           target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          sync_method: merge
+          force: false
+          tags: false
+          pr_title: "🔄 Sync with upstream main"
+          pr_body: "Automatically synced with upstream changes"
+          pr_label: "sync"
+          pr_assignee: ${{ github.repository_owner }}
+          create_pr: true # 启用自动创建同步 PR
+
+      - name: Sync success
+        if: success()
+        run: |
+          echo "✅ Sync completed successfully!"
+          echo "Synced commits: ${{ steps.sync.outputs.sync_commits }}"
+          echo "Sync method: ${{ steps.sync.outputs.sync_method }}"
 
       - name: Sync check
         if: failure()
         run: |
-          echo "[Error] Due to a change in the workflow file of the upstream repository, GitHub has automatically suspended the scheduled automatic update. You need to manually sync your fork."
+          echo "[Error] 同步失败，请检查上游仓库是否有重大变更或权限问题。"
           exit 1
+
+      - name: Upload sync logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: sync-logs
+          path: ${{ github.workspace }}/.github/actions/sync/logs/
+          retention-days: 7
+    
